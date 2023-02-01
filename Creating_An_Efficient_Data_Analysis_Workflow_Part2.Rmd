@@ -1,0 +1,163 @@
+---
+title: "Creating An Efficient Data Analysis Workflow - Part2"
+author: "Kacper Kaszuba"
+output: html_document
+---
+
+# Introduction
+
+In the project "Creating An Efficient Data Analysis Workflow", we are taking on
+the role of an analyst for a book company. The company has provided us more data 
+on some of its 2019 book sales, and it wants us to extract some usable knowledge 
+from it. It launched a new program encouraging customers to buy more books on 
+July 1st, 2019, and it wants to know if this new program was successful at 
+increasing sales and improving review quality.
+
+# Loading Libraries and Reading in File
+
+```{r, message=FALSE}
+library(tidyverse)
+library(lubridate)
+
+df <- read.csv("https://github.com/KacperKaszuba0608/Datasets/raw/main/sales2019.csv")
+head(df)
+```
+
+# Extracting informations
+
+```{r}
+# Number of rows and columns
+dim(df)
+```
+
+```{r}
+# Checking type of columns
+glimpse(df)
+```
+
+```{r}
+# Checking missing values in each column
+length(which(is.na(df$user_submitted_review)))
+length(which(is.na(df$date)))
+length(which(is.na(df$title)))
+length(which(is.na(df$total_purchased)))
+length(which(is.na(df$customer_type)))
+```
+Dataset consists of the 5 column and 5000 rows. Data has missing value in 
+`total_purchased` column and `user_submitted_review`. Types of column is as follows:
+
+* `date` - contain information about date in character type
+* `user_submitted_review` - contains review from reader in character type
+* `title` - title of a book in character type
+* `total_purchased` - number of purchased books in range 0:12, integer type
+* `customer_type` - type of customer in character type, with 2 level 'Business' and 'Individual'
+
+# Data Cleaning
+
+## Handling Missing Values
+
+For total_purchased, we're going to replace all of the NA values with an
+average value that we calculate from the complete dataset.
+
+```{r}
+# Removing NA values from second column
+df <- df %>%
+  filter(!(is.na(user_submitted_review))) %>%
+  mutate(total_purchased = ifelse(is.na(total_purchased),
+                                  round(mean(!is.na(total_purchased)),3),
+                                  total_purchased))
+```
+
+## Processing Review Data
+
+At first I extract unique values from `user_submitted_review`. 
+Then I choose some words which will be information about is a review 
+positive or negative.
+
+```{r}
+unique(df$user_submitted_review)
+```
+
+Above we have few sentence and I think postivie word/phrase can be: 'Awesome', 'okay', 
+'learned a lot', 'Never read a better book' and 'OK'. The negative word/phrase can be:
+'Hated', 'not needed', 'not recommend' and 'other books were better'. 
+
+If I have this words, now I can create a function which will returns a value 
+indicating if the review is positive or not.
+
+```{r}
+p_or_n <- function(review){
+  result <- case_when(str_detect(review, 'Awesome')~TRUE,
+                      str_detect(review, 'okay')~TRUE,
+                      str_detect(review, 'learned a lot')~TRUE,
+                      str_detect(review, 'Never read a better book')~TRUE,
+                      str_detect(review, 'OK')~TRUE,
+                      TRUE~FALSE)
+}
+
+df <- df %>%
+  mutate(positive_or_not = unlist(map(user_submitted_review, p_or_n)))
+```
+
+# Comparing Book Sales Between Pre- and Post-Program Sales
+
+I can finally make a move towards answering the main question of the analysis, 
+Was the new book program effective in increasing book sales? The program started 
+on July 1, 2019 and the data we have contains all of the sales for 2019. But at 
+first I have to change type od column to date type and check how many books was 
+before and after July 1, 2019.
+
+```{r}
+# Changing types of date column
+df <- df %>%
+  mutate(date = mdy(date),
+         when_date = ifelse(date < '2019-07-01', 'Pre-', 'Post-'))
+
+book_program_status <- df %>%
+  group_by(when_date) %>%
+  summarize(books_purchased = sum(total_purchased))
+
+book_program_status
+```
+
+As we see the result of purchased book after the new book program on July 1, 2019
+wasn't effective. We can see a decrease of number of books sold from approximately 
+8167 to 7970 books. Coclusion of this program is that the new book program wasn't
+effective for company.
+
+
+# Comparing Book Sales Within Customer Type
+
+In previous step of analysis we claim that the new book program hadn't been effective.
+That's why I make a step further and check if it's possible that individual customers
+responded better to the program and bought more books in response to the program.
+Or, it could have been businesses that bought more books.
+
+```{r, message=FALSE}
+customers <- df %>%
+  group_by(when_date, customer_type) %>%
+  summarize(books_purchased = sum(total_purchased)) %>%
+  arrange(customer_type, when_date)
+
+customers
+```
+
+Comparing Book Sales Within Customer Type doesn't give us me satisfied answer, because
+still the new program doesn't bring benefits to the company.
+
+# Comparing Review Sentiment Between Pre- and Post-Program Sales
+
+The last question that I need to answer with the data is, **did review scores improve
+as a result of the program?** The answer is below.
+
+```{r, message=FALSE}
+better_reviews <- df %>%
+  group_by(when_date) %>%
+  summarize(positive_or_not = sum(positive_or_not)) %>%
+  arrange(-positive_or_not)
+
+better_reviews
+```
+
+The reviews seems to be better before the new book program, but this difference is 
+very small.
