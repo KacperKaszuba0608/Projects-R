@@ -1,0 +1,186 @@
+---
+title: "Creating An Efficient Data Analysis Workflow"
+author: "Kacper Kaszuba"
+output: html_document
+---
+
+# Introdution
+
+This project will be about analysis of data for a company that sells books for learning programming. This company has produced multiple books, and each has received many reviews. The company wants us to check out the sales data and see if we can extract any useful information from it.
+
+***
+
+# Loading Libraries and Reading in Dataset
+
+```{r, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+
+# Reading in dataset in csv file
+df <- read_csv('https://raw.githubusercontent.com/KacperKaszuba0608/Datasets/main/book_reviews.csv')
+```
+
+# Getting informations about data
+
+```{r}
+# Showing first five rows
+head(df)
+```
+
+```{r}
+# Extarcting number of rows and columns
+dim(df)
+```
+
+```{r}
+# Extracting some informations about data with examples
+glimpse(df)
+```
+
+```{r}
+# Summary of data
+summary(df)
+```
+
+
+As we see in above results we have 2000 rows and 4 columns in our dataset. First 3 columns are character type and last one is numeric. We have some NA values. Minimum price in last column is 15.99\$ and maximum is 50.00\$. Median of all values equals 29.99\$ and mean 31.29\$. 25% of values are greater than 19.99\$ and 75% values are less than 39.99\$.
+
+The columns are named as follows:
+
+1. book - name of a book
+2. review - column contains score of a book
+3. state - contains name or short name of state in USA
+4. price - price of each book
+
+```{r}
+# Taking unique values of each column
+names <- colnames(df)
+
+map(df[names], unique)
+```
+|   |   |
+|:---|:---|
+|**book column**| "R Made Easy", "R For Dummies", "Secrets Of R For Advanced Students", "Top 10 Mistakes R Beginners Make", "Fundamentals of R For Beginners" |
+|**review column**| Excellent, Fair, Poor, Great, Good, NA value |
+|**state column**|TX, NY, FL, CA, Texas, California, Florida, New York |
+|**price column**|19.99, 15.99, 50.00, 29.99, 39.99|
+
+***
+
+# Cleaning data
+
+## Handling Missing Data
+
+As we see above column `review` has some missing values called `NA`. I will remove them, because I want to have clean dataset without the missing values.
+
+```{r}
+# Filtering data
+df <- df %>%
+  filter(!(is.na(review)))
+
+map(df['review'], unique)
+```
+
+After filter I don't have NA values and I can start my analysis. Now, our data have 1794 rows and still 4 columns. 
+
+## Dealing With Inconsistent Labels in `state` column
+
+In state column we have values with the same mining. For example `CA` and `California`. It means the same thing, but first is postal code, second is full name of state. Below I change all full names to postal code.
+
+```{r}
+# Changing state name to postal code
+df <- df %>%
+  mutate(state = case_when(state == 'California' ~ 'CA',
+                           state == 'Texas' ~ 'TX',
+                           state == 'New York' ~ 'NY',
+                           state == 'Florida' ~ 'FL',
+                           TRUE ~ state))
+```
+
+## Transforming The Review Data
+
+In this part I decided to change values in `review` column from character to numeric. I have adopted the following coding:
+
+* "Poor" has score" `1`
+* "Fair" has score: `2`
+* "Good" has score: `3`
+* "Great" has score: `4`
+* "Excellent" has score: `5`
+
+Then I add new column named `high_review` which will contain `TRUE` value if score is greater or queal to 4 and `FALSE` when score is less than 4.
+
+```{r}
+# Coding review column and adding new high_review
+df <- df %>%
+  mutate(review = case_when(review == 'Poor' ~ 1,
+                   review == 'Fair' ~ 2,
+                   review == 'Good' ~ 3,
+                   review == 'Great' ~ 4,
+                   review == 'Excellent' ~ 5,),
+         high_review = ifelse(review >= 4, TRUE, FALSE))
+```
+
+# Analyzing The Data
+
+After data cleaning, I'm ready to do some analysis of the data. My main goal is to figure out what book is the most profitable. How I will do this? I can calculate which book purchased the most or how much money each book generates for company. I will show some basic statistic which will answer the question and some visualization to show you in more pleasing to the eye.
+
+```{r}
+# Calculating sum of books sold and sum of money from sale
+most_profitable <- df %>%
+  group_by(book) %>%
+  summarize(books_sold = table(book),
+            money = sum(price)) %>%
+  arrange(-money) %>%
+  mutate(rank = c(1,2,3,4,5))
+
+most_profitable
+```
+
+```{r, fig.align='center'}
+# Visualization of received results
+
+ggplot(data = most_profitable, aes(x = reorder(rank, -money), y = money, fill = book))+
+  geom_col() + 
+  geom_text(aes(label = money), vjust = 1.1, size = 3.5)+
+  ylab('Money [$]')+
+  xlab('Book name')+
+  ggtitle('Money recived from books sold')+
+  labs(fill='Name of a book')
+```
+
+Above results shows us that the most profitable book was "Secrets Of R For Advanced Students" and ranking is as follows:
+
+1. "Secrets Of R For Advanced Students"
+2. "Fundamentals of R For Beginners"
+3. "Top 10 Mistakes R Beginners Make"
+4. "R Made Easy"
+5. "R For Dummies"
+
+# Relationship between State and the Books
+
+Now I focus on question: Is there any relationship between state and the books purchased there? Maybe some states have more interest in some books over others. Thanks to this knowledge company will knows, where sholud sell which book.
+
+```{r}
+table(df$book, df$state)
+```
+
+Table above shows us little ralationship between state and the books. Namely:
+
+* In California the most often purchased book was "R For Dummies". Up to 120 times.
+* In Florida all books have a similar number of purchased books but 2 of them were purchesed less than 80 times.
+* In New York people bought most often "Secrets of R For Advanced Students" and "Top 10 Mistakes R Beginners Make". Over 100 times.
+* In Texas we have the same result like in Florida but here the number of books sold is greater.
+
+Below we have visualization of results from table.
+
+```{r, fig.align='center'}
+# Bar chart of results from table
+all_states <- ggplot(data = df, aes(x = state, fill = book))+
+                geom_bar()+
+                xlab('State')+
+                ylab('Number of books')+
+                ggtitle('Relationship between State and the Books Purchased There')+
+                labs(fill='Name of a book')
+all_states
+```
